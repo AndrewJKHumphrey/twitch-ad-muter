@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Twitch Ad Muter",
+  "version": "1.6",
+  "description": "Mutes the tab when a Twitch ad is playing, unmutes when it ends.",
+  "permissions": ["tabs", "storage", "contextMenus"],
+  "host_permissions": ["*://*.twitch.tv/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.twitch.tv/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16":  "icons/icon.png",
+    "32":  "icons/icon.png",
+    "48":  "icons/icon.png",
+    "128": "icons/icon.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Twitch Ad Muter",
+    "default_icon": "icons/icon.png"
+  }
+}

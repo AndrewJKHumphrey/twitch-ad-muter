@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitch Ad Muter — Help</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0e0e10;
+      color: #efeff1;
+      margin: 0;
+      padding: 40px 24px 60px;
+      line-height: 1.6;
+    }
+
+    .page {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 32px;
+      border-bottom: 1px solid #2a2a2d;
+      padding-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .mute-counter {
+      margin-left: auto;
+      font-size: 13px;
+      color: #adadb8;
+    }
+
+    .mute-counter strong {
+      color: #bf94ff;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      color: #bf94ff;
+    }
+
+    header .version {
+      font-size: 12px;
+      color: #adadb8;
+    }
+
+    /* ── Sections ── */
+    section { margin-bottom: 36px; }
+
+    h2 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: #bf94ff;
+      margin: 0 0 14px;
+    }
+
+    p {
+      margin: 0 0 12px;
+      font-size: 14px;
+      color: #c8c8d0;
+    }
+
+    /* ── Setting cards ── */
+    .setting {
+      background: #18181b;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .setting-body { flex: 1; min-width: 0; }
+
+    .setting-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #efeff1;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 10px;
+      flex-shrink: 0;
+    }
+
+    .badge.on  { background: #1f3a2a; color: #00c7ac; }
+    .badge.off { background: #2a2a2d; color: #adadb8; }
+
+    .setting-desc {
+      font-size: 13px;
+      color: #adadb8;
+      margin: 0;
+    }
+
+    .setting.sub {
+      margin-left: 20px;
+      border-left: 2px solid #3a3a3d;
+      border-radius: 0 8px 8px 0;
+    }
+
+    /* ── How it works ── */
+    ol {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 14px;
+      color: #c8c8d0;
+    }
+
+    ol li { margin-bottom: 6px; }
+
+    /* ── Notes ── */
+    .note {
+      background: #18181b;
+      border-left: 3px solid #9147ff;
+      border-radius: 0 6px 6px 0;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #adadb8;
+      margin-bottom: 10px;
+    }
+
+    .note strong { color: #efeff1; }
+
+    img + .note, .note + img,
+    p + .note, .note + p,
+    p + img, img + p { margin-top: 16px; }
+
+    code {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 12px;
+      background: #2a2a2d;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <header>
+      <h1>Twitch Ad Muter</h1>
+      <span class="version">v1.6</span>
+      <div class="mute-counter">
+        Ads muted this session: <strong id="totalMutes">—</strong>
+      </div>
+    </header>
+
+    <!-- Overview -->
+    <section>
+      <h2>Overview</h2>
+      <p>
+        Twitch Ad Muter automatically mutes your browser tab when a Twitch ad is playing
+        and unmutes it the moment the ad ends. Multiple detection methods are used so the
+        extension continues to work even when Twitch updates its player.
+      </p>
+      <p>
+        Additional features include:
+      </p>
+      <ul style="margin:0 0 12px; padding-left:20px; font-size:14px; color:#c8c8d0;">
+        <li style="margin-bottom:6px"><strong style="color:#efeff1;">Mute inactive tabs</strong> — automatically mutes Twitch tabs you are not currently watching.</li>
+        <li style="margin-bottom:6px"><strong style="color:#efeff1;">Switch tab on ad</strong> — switches focus to another Twitch stream when an ad plays on your Primary Tab.</li>
+        <li style="margin-bottom:6px"><strong style="color:#efeff1;">Return when ad ends</strong> — switches back to your Primary Tab automatically once the ad is over.</li>
+        <li style="margin-bottom:6px"><strong style="color:#efeff1;">Close tab when stream ends</strong> — closes the tab when a broadcaster ends their stream, with a brief grace period to avoid false closures.</li>
+        <li style="margin-bottom:6px"><strong style="color:#efeff1;">Auto-reload on crash</strong> — detects stream errors and stalls and reloads the player automatically, up to three times per session.</li>
+      </ul>
+    </section>
+
+    <!-- Settings -->
+    <section>
+      <h2>Settings</h2>
+
+      <div class="setting">
+        <div class="setting-body">
+          <div class="setting-title">
+            Mute inactive tabs
+            <span class="badge off">Default: off</span>
+          </div>
+          <p class="setting-desc">
+            Mutes every Twitch tab that is not currently in the foreground. Tabs unmute
+            automatically when you switch to them. Useful when you have multiple streams
+            open and only want to hear the one you are actively watching.
+          </p>
+        </div>
+      </div>
+
+      <div class="note">
+        <strong>Manual mute</strong> — if you mute a tab yourself using the browser, the
+        extension will not unmute it. It only unmutes tabs that it muted itself.
+      </div>
+
+      <div class="setting">
+        <div class="setting-body">
+          <div class="setting-title">
+            Switch tab on ad
+            <span class="badge off">Default: off</span>
+          </div>
+          <p class="setting-desc">
+            When an ad starts on the <strong>Primary Tab</strong>, the extension
+            automatically switches focus to another Twitch stream tab in the same window
+            that is not playing an ad. Requires at least two Twitch stream tabs to be
+            open. Non-stream pages (directory, search, home, etc.) are excluded as
+            targets. See <em>Primary Tab</em> below for how to designate one.
+          </p>
+        </div>
+      </div>
+
+      <div class="setting sub">
+        <div class="setting-body">
+          <div class="setting-title">
+            Return when ad ends
+            <span class="badge off">Default: off</span>
+          </div>
+          <p class="setting-desc">
+            Works alongside <em>Switch tab on ad</em>. When the ad finishes on the
+            Primary Tab, the extension switches focus back to it automatically.
+            Interacting with the secondary tab while waiting does not affect this
+            behaviour.
+          </p>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-body">
+          <div class="setting-title">
+            Close tab when stream ends
+            <span class="badge on">Default: on</span>
+          </div>
+          <p class="setting-desc">
+            Closes the tab automatically when the broadcaster ends their stream. A
+            5-second grace period is applied before closing to avoid false positives
+            from brief interruptions. If the stream resumes within that window the
+            close is cancelled.
+          </p>
+        </div>
+      </div>
+
+      <div class="setting">
+        <div class="setting-body">
+          <div class="setting-title">
+            Auto-reload on crash
+            <span class="badge on">Default: on</span>
+          </div>
+          <p class="setting-desc">
+            Detects stream crashes via Twitch's Error&nbsp;#2000 message and video stall
+            detection (playback frozen for 15+ seconds). When a crash is detected the
+            extension first attempts to click Twitch's own retry button; if none is found
+            it reloads the tab. Limited to 3 reloads per tab within any 10-minute window
+            to prevent infinite reload loops.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Primary Tab -->
+    <section>
+      <h2>Primary Tab</h2>
+      <p>
+        The Primary Tab is the Twitch stream tab you designate as your main viewing tab.
+        It is used by <em>Switch tab on ad</em> and <em>Return when ad ends</em> to know
+        which tab to switch away from when an ad plays and which to return to once the ad
+        is over.
+      </p>
+      <p>
+        To set a tab as Primary, <strong>right-click anywhere on the Twitch page</strong>
+        and choose <strong>Set as Primary Tab</strong> from the context menu. Only one tab
+        can be Primary at a time — setting a new one automatically clears the previous.
+      </p>
+      <img
+        src="icons/screenshot-context-menu.png"
+        alt="Right-click context menu showing the Set as Primary Tab option"
+        style="display:block; max-width:420px; border-radius:8px; margin:12px 0 4px; border:1px solid #2a2a2d;"
+      />
+      <p>
+        Once set, the tab title updates to
+        <code>&lt;streamer&gt; - Primary</code> so you can identify it at a
+        glance in the tab bar. The suffix is maintained even if Twitch updates the title
+        dynamically (e.g. when the stream category or title changes). It is removed
+        automatically when a different tab is made Primary or when the tab is closed.
+      </p>
+      <img
+        src="icons/screenshot-primary-title.png"
+        alt="Browser tab bar showing a Twitch tab with the Primary suffix in the title"
+        style="display:block; height:35px; width:auto; border-radius:8px; margin:12px 0 4px; border:1px solid #2a2a2d;"
+      />
+      <div class="note">
+        <strong>No automatic assignment</strong> — the Primary Tab is never set
+        implicitly by clicking or navigating. You must assign it manually via the
+        right-click menu.
+      </div>
+    </section>
+
+<!-- Do Not Mute -->
+    <section>
+      <h2>Do Not Mute</h2>
+      <p>
+        Do Not Mute (DNM) prevents the extension from muting a specific tab due to
+        inactivity or any other content-related behaviour. <strong>Ads on that tab are
+        still muted</strong> — this setting only protects content playback.
+      </p>
+      <p>
+        To enable it, <strong>right-click anywhere on the Twitch page</strong> and open
+        the <strong>Twitch Ad Muter</strong> submenu — the same menu used to set the
+        Primary Tab. Check <strong>Do Not Mute This Tab (Ads are still muted)</strong>
+        to enable it for that tab. Unchecking it removes the protection.
+      </p>
+      <div class="note">
+        <strong>Per-tab setting</strong> — DNM is tracked individually for each tab and
+        is cleared automatically when the tab is closed.
+      </div>
+      <img
+        src="icons/screenshot-dnm-title.png"
+        alt="Browser tab bar showing a Twitch tab with the DNM suffix in the title"
+        style="display:block; height:35px; width:auto; border-radius:8px; margin:12px 0 4px; border:1px solid #2a2a2d;"
+      />
+      <div class="note">
+        When active, the tab title gains a <code>- DNM</code> suffix so you can identify
+        protected tabs at a glance. If the tab is also the Primary Tab,
+        <code>- Primary</code> takes precedence in the title.
+      </div>
+    </section>
+
+<!-- Disclaimer -->
+    <section>
+      <h2>Disclaimer</h2>
+      <p>
+        This extension was developed with significant assistance from
+        <strong>Claude AI</strong> (Anthropic). The development process was undertaken
+        deliberately as a learning exercise to explore the strengths and weaknesses of
+        AI-assisted software development — including where AI guidance is reliable, where
+        it requires correction, and how the iterative back-and-forth between developer and
+        AI shapes the final product.
+      </p>
+      <p>
+        The developer retains responsibility for all design decisions and the extension's
+        behaviour. Use at your own discretion.
+      </p>
+    </section>
+
+    <!-- Notes -->
+    <section>
+      <h2>Notes</h2>
+      <div class="note">
+        <strong>Selector drift</strong> — Twitch periodically changes its HTML class
+        names and data attributes. If muting stops working, check for an extension
+        update.
+      </div>
+      <div class="note">
+        <strong>Tab switching</strong> — the extension only considers tabs in the
+        <strong>same browser window</strong> when looking for an ad-free tab to switch
+        to.
+      </div>
+      <div class="note">
+        <strong>Permissions</strong> — the extension requires <em>tabs</em>,
+        <em>storage</em>, and <em>contextMenus</em> permissions. It only operates on
+        <code>twitch.tv</code> pages.
+      </div>
+    </section>
+
+  </div>
+
+  <script src="help.js"></script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitch Ad Muter</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      width: 240px;
+      padding: 16px;
+      margin: 0;
+      background: #0e0e10;
+      color: #efeff1;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #bf94ff;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 6px;
+      background: #18181b;
+      margin-bottom: 8px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.ad    { background: #f04f23; box-shadow: 0 0 6px #f04f23; }
+    .dot.clear { background: #00c7ac; box-shadow: 0 0 6px #00c7ac; }
+    .dot.idle  { background: #555; }
+
+    .row-text { font-size: 13px; flex: 1; }
+
+    /* Toggle switch */
+    .toggle-row {
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-label { font-size: 13px; color: #efeff1; }
+    .toggle-sub   { font-size: 11px; color: #adadb8; margin-top: 2px; }
+
+    .switch {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: #3a3a3d;
+      border-radius: 20px;
+      transition: background 0.2s;
+    }
+    .slider::before {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      left: 3px;
+      top: 3px;
+      background: #efeff1;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    input:checked + .slider { background: #9147ff; }
+    input:checked + .slider::before { transform: translateX(16px); }
+
+    .stat {
+      font-size: 12px;
+      color: #adadb8;
+      padding: 6px 12px;
+      background: #18181b;
+      border-radius: 6px;
+    }
+    .stat span { color: #efeff1; font-weight: 600; }
+
+    .footer {
+      margin-top: 10px;
+      text-align: right;
+    }
+
+    .help-link {
+      font-size: 11px;
+      color: #adadb8;
+      text-decoration: none;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+    }
+
+    .help-link:hover { color: #bf94ff; }
+  </style>
+</head>
+<body>
+  <h2>Twitch Ad Muter</h2>
+
+  <div class="row">
+    <div class="dot idle" id="dot"></div>
+    <div class="row-text" id="status">Loading&hellip;</div>
+  </div>
+
+  <label class="row toggle-row">
+    <div>
+      <div class="toggle-label">Mute inactive tabs</div>
+      <div class="toggle-sub">Unmutes when you switch to the tab</div>
+    </div>
+    <div class="switch">
+      <input type="checkbox" id="muteInactiveToggle">
+      <span class="slider"></span>
+    </div>
+  </label>
+
+  <label class="row toggle-row">
+    <div>
+      <div class="toggle-label">Switch tab on ad</div>
+      <div class="toggle-sub">Switches to another Twitch tab when an ad plays</div>
+    </div>
+    <div class="switch">
+      <input type="checkbox" id="switchOnAdToggle">
+      <span class="slider"></span>
+    </div>
+  </label>
+
+  <label class="row toggle-row" style="padding-left: 24px;">
+    <div>
+      <div class="toggle-label">Return when ad ends</div>
+      <div class="toggle-sub">Switches back to the original tab after the ad</div>
+    </div>
+    <div class="switch">
+      <input type="checkbox" id="returnOnAdEndToggle">
+      <span class="slider"></span>
+    </div>
+  </label>
+
+  <label class="row toggle-row">
+    <div>
+      <div class="toggle-label">Close tab when stream ends</div>
+      <div class="toggle-sub">Closes after a 5-second grace period</div>
+    </div>
+    <div class="switch">
+      <input type="checkbox" id="closeOnStreamEndToggle">
+      <span class="slider"></span>
+    </div>
+  </label>
+
+  <label class="row toggle-row">
+    <div>
+      <div class="toggle-label">Auto-reload on crash</div>
+      <div class="toggle-sub">Reloads up to 3× per 10 min if stream freezes</div>
+    </div>
+    <div class="switch">
+      <input type="checkbox" id="autoReloadToggle">
+      <span class="slider"></span>
+    </div>
+  </label>
+
+  <div class="stat">Ads muted this session: <span id="count">0</span></div>
+
+  <div class="footer">
+    <button class="help-link" id="helpBtn">Help &amp; settings guide</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
