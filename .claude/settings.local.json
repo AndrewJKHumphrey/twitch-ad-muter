@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"C:/Program Files \\(x86\\)/Microsoft/Edge/Application/msedge.exe\" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --default-background-color=00000000 --window-size=256,256 --screenshot=\"c:/Users/humph/twitch-ad-muter/icons/_test.png\" \"file:///c:/Users/humph/twitch-ad-muter/icons/_render.html\")"
+    ]
+  }
+}

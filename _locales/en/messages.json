@@ -1,0 +1,8 @@
+{
+  "extensionName": {
+    "message": "Quiet Twitch"
+  },
+  "extensionDescription": {
+    "message": "Mutes your tab when a Twitch ad plays and unmutes it the moment the ad ends. Works automatically."
+  }
+}

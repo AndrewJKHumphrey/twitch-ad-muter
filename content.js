@@ -61,6 +61,161 @@ function injectPageScript() {
 
 injectPageScript();
 
+// ── Hidden streamers ──────────────────────────────────────────────────────────
+
+let hiddenStreamers = new Set();
+chrome.storage.local.get('hiddenStreamers', ({ hiddenStreamers: arr }) => {
+  hiddenStreamers = new Set((arr || []).map(s => s.toLowerCase()));
+  applyHiding();
+});
+
+// Returns true if `el` contains links/data attributes pointing to streamers
+// other than `username` — indicating it is a section/list rather than a card
+// dedicated to one streamer.
+function containsOtherStreamerRefs(el, username) {
+  const logins = el.querySelectorAll('[data-login]');
+  for (const l of logins) {
+    if ((l.dataset.login || '').toLowerCase() !== username) return true;
+  }
+  const users = el.querySelectorAll('[data-a-user]');
+  for (const u of users) {
+    if ((u.dataset.aUser || '').toLowerCase() !== username) return true;
+  }
+  const links = el.querySelectorAll('a[href^="/"]');
+  for (const a of links) {
+    const href = (a.getAttribute('href') || '').toLowerCase();
+    if (/^\/[a-z0-9_]+\/?$/.test(href) && !href.startsWith(`/${username}`)) return true;
+  }
+  return false;
+}
+
+// Walk up from a matched streamer link to find the full card container.
+//
+// Strategy: the card container is the element whose siblings are cards for
+// *different* streamers.  We require "different" because multiple links to the
+// same streamer (name link + avatar link) can share a parent that is still
+// *inside* the card — stopping there would leave the offline text visible.
+function getCardAncestor(el, username) {
+  let node = el;
+  // Track the most recent LI/ARTICLE we walked past — used only as a fallback
+  // if sibling analysis fails to find a card boundary.  We can't short-circuit
+  // on LI/ARTICLE because Twitch's directory wraps each <article> in several
+  // grid-related <div>s, and the actual grid item is one of those outer divs.
+  let semanticFallback = null;
+  for (let i = 0; i < 14; i++) {
+    node = node.parentElement;
+    if (!node) break;
+
+    if (!semanticFallback && (node.tagName === 'LI' || node.tagName === 'ARTICLE')) {
+      semanticFallback = node;
+    }
+
+    const parent = node.parentElement;
+    if (!parent) continue;
+
+    if (parent.children.length > 1) {
+      const sibs = Array.from(parent.children).filter(c => c !== node);
+      const hasDifferentCard = sibs.some(sib => containsOtherStreamerRefs(sib, username));
+      if (hasDifferentCard) return node;
+    }
+  }
+  return semanticFallback;
+}
+
+// Hide an element and any same-level siblings that also reference the same streamer.
+// This handles layouts (e.g. home page) where card content is split across sibling
+// elements — thumbnail in one div, channel info in an adjacent sibling.
+//
+// We deliberately skip siblings that also reference *other* streamers — those
+// are sections/lists (like search-page result groups) that contain the streamer
+// alongside many others, and hiding them would over-hide unrelated content.
+function hideWithSiblings(el, username) {
+  el.dataset.qtHidden = username;
+  el.style.display = 'none';
+
+  const parent = el.parentElement;
+  if (!parent) return;
+  Array.from(parent.children).forEach(sib => {
+    if (sib === el || sib.dataset.qtHidden) return;
+    const refsStreamer = sib.querySelector(
+      `a[href="/${username}" i], a[href^="/${username}/" i], a[href^="/${username}?" i], [data-login="${username}" i], [data-a-user="${username}" i]`
+    );
+    if (!refsStreamer) return;
+    if (containsOtherStreamerRefs(sib, username)) return;
+    sib.dataset.qtHidden = username;
+    sib.style.display = 'none';
+  });
+}
+
+// If the user navigated to a hidden streamer's channel page, send them home.
+// Twitch reserved paths (/directory, /settings, …) won't be in hiddenStreamers,
+// so a simple first-segment match is safe.
+function redirectIfHiddenChannel() {
+  const first = location.pathname.split('/')[1];
+  if (first && hiddenStreamers.has(first.toLowerCase())) {
+    location.replace('https://www.twitch.tv/');
+  }
+}
+
+function applyHiding() {
+  redirectIfHiddenChannel();
+
+  if (!hiddenStreamers.size) {
+    document.querySelectorAll('[data-qt-hidden]').forEach(el => {
+      el.style.display = '';
+      el.removeAttribute('data-qt-hidden');
+    });
+    return;
+  }
+
+  // Restore elements whose streamers are no longer in the hidden set
+  document.querySelectorAll('[data-qt-hidden]').forEach(el => {
+    if (!hiddenStreamers.has(el.dataset.qtHidden)) {
+      el.style.display = '';
+      el.removeAttribute('data-qt-hidden');
+    }
+  });
+
+  // Hide elements matching any hidden streamer.
+  // The " i" flag makes the attribute selectors case-insensitive — Twitch
+  // sometimes preserves the original capitalization in hrefs (e.g. /YisLunae)
+  // while we store usernames lowercase.
+  for (const username of hiddenStreamers) {
+    const selectors = [
+      `a[href="/${username}" i]`,
+      `a[href^="/${username}/" i]`,
+      `a[href^="/${username}?" i]`,
+      `[data-login="${username}" i]`,
+      `[data-a-user="${username}" i]`,
+    ];
+    for (const sel of selectors) {
+      document.querySelectorAll(sel).forEach(link => {
+        const card = getCardAncestor(link, username) || link;
+        if (!card.dataset.qtHidden) {
+          hideWithSiblings(card, username);
+        }
+      });
+    }
+  }
+}
+
+// Reload hidden streamers from storage and re-apply
+function refreshHiddenStreamers() {
+  chrome.storage.local.get('hiddenStreamers', ({ hiddenStreamers: arr }) => {
+    hiddenStreamers = new Set((arr || []).map(s => s.toLowerCase()));
+    applyHiding();
+  });
+}
+
+// Re-apply hiding whenever the stored list changes (e.g. popup chip removal)
+chrome.storage.local.onChanged.addListener((changes) => {
+  if ('hiddenStreamers' in changes) {
+    hiddenStreamers = new Set((changes.hiddenStreamers.newValue || []).map(s => s.toLowerCase()));
+    applyHiding();
+  }
+});
+
+
 // Listen for page-context messages
 // Track network signal separately so DOM polling cannot cancel a network-detected ad
 let networkAdActive = false;
@@ -118,7 +273,9 @@ function stopTitleObserver() {
 }
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'SET_PRIMARY_TITLE') {
+  if (message.type === 'HIDDEN_STREAMERS_UPDATED') {
+    refreshHiddenStreamers();
+  } else if (message.type === 'SET_PRIMARY_TITLE') {
     isPrimaryActive = true;
     applyTitleState();
     startTitleObserver();
@@ -281,7 +438,12 @@ function checkDOM() {
       lastCountdownText  = null;
     }
   }
+
+  // Feature: hide blocked streamers across all Twitch pages
+  applyHiding();
+
 }
+
 
 setInterval(checkDOM, 1000);
 

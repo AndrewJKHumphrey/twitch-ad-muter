@@ -59,6 +59,16 @@ function isTwitchStreamUrl(url) {
   } catch { return false; }
 }
 
+// Extract the lowercase streamer username from a stream URL (e.g. /xqc → 'xqc')
+// Returns null for non-stream URLs (directory, home, etc.)
+function getStreamerFromUrl(url) {
+  if (!isTwitchStreamUrl(url)) return null;
+  try {
+    const username = new URL(url).pathname.split('/')[1];
+    return username?.toLowerCase() || null;
+  } catch { return null; }
+}
+
 // Mute a tab and record that we did it
 // Skips silently if the tab has "Do not mute" enabled
 async function muteTab(tabId, mutedByUs, doNotMuteTabs) {
@@ -250,18 +260,33 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
     pendingUnmute.delete(tabId); // clear pending even if we didn't mute it
   }
 
-  // If muteInactive is on, mute all other inactive Twitch tabs in this window
+  // If muteInactive is on and the active tab is a stream, mute all other inactive stream tabs.
+  // If the active tab is a non-stream page (home, directory, etc.) and muteOnNonStream is on,
+  // mute all stream tabs including the previously active one. Otherwise do nothing — the
+  // previously active stream tab is already unmuted and other stream tabs stay muted.
   if (muteInactive) {
     const allTwitchTabs = await chrome.tabs.query({ windowId });
-    for (const tab of allTwitchTabs) {
-      if (tab.id === tabId) continue;
-      if (!isTwitchUrl(tab.url)) continue;
-      if (!tab.mutedInfo?.muted) await muteTab(tab.id, mutedByUs, doNotMuteTabs);
+    if (isTwitchStreamUrl(activatedTab.url)) {
+      for (const tab of allTwitchTabs) {
+        if (tab.id === tabId) continue;
+        if (!isTwitchStreamUrl(tab.url)) continue;
+        if (!tab.mutedInfo?.muted) await muteTab(tab.id, mutedByUs, doNotMuteTabs);
+      }
+    } else {
+      const muteOnNonStream = await getSetting('muteOnNonStream', false);
+      if (muteOnNonStream) {
+        for (const tab of allTwitchTabs) {
+          if (tab.id === tabId) continue;
+          if (!isTwitchStreamUrl(tab.url)) continue;
+          if (!tab.mutedInfo?.muted) await muteTab(tab.id, mutedByUs, doNotMuteTabs);
+        }
+      }
     }
   }
 
-  // Keep the Do Not Mute checkbox in sync with the newly active tab
+  // Keep the Do Not Mute checkbox and Hide Streamer menu item in sync with the newly active tab
   chrome.contextMenus.update('toggleDoNotMute', { checked: doNotMuteTabs.has(tabId) }).catch(() => {});
+  updateHideStreamerMenuItem(activatedTab.url);
 
   await Promise.all([
     saveSet('mutedByUs', mutedByUs),
@@ -272,9 +297,9 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
 // ── muteInactive setting toggled (via storage.onChanged) ──────────────────────
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && 'muteInactive' in changes) {
-    applyMuteInactiveSetting(changes.muteInactive.newValue);
-  }
+  if (area !== 'local') return;
+  if ('muteInactive' in changes) applyMuteInactiveSetting(changes.muteInactive.newValue);
+  if ('language' in changes) registerContextMenus();
 });
 
 async function applyMuteInactiveSetting(enabled) {
@@ -285,9 +310,9 @@ async function applyMuteInactiveSetting(enabled) {
   const allTabs = await chrome.tabs.query({ url: '*://*.twitch.tv/*' });
 
   if (enabled) {
-    // Mute every inactive Twitch tab that isn't already muted
+    // Mute every inactive Twitch stream tab that isn't already muted
     for (const tab of allTabs) {
-      if (!tab.active && !tab.mutedInfo?.muted) {
+      if (!tab.active && !tab.mutedInfo?.muted && isTwitchStreamUrl(tab.url)) {
         await muteTab(tab.id, mutedByUs, doNotMuteTabs);
       }
     }
@@ -334,46 +359,112 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     chrome.tabs.sendMessage(tabId, { type: 'SET_DNM_TITLE' }).catch(() => {});
   }
 
-  // Sync the DNM checkbox to reflect this tab's state if it is currently active
+  // Sync the DNM checkbox and Hide Streamer menu item to reflect this tab's state if it is currently active
   if (tab.active) {
     chrome.contextMenus.update('toggleDoNotMute', { checked: doNotMuteTabsOnLoad.has(tabId) }).catch(() => {});
+    updateHideStreamerMenuItem(tab.url);
+
+    // Active tab navigated away from a stream — if muteOnNonStream is on, mute all
+    // other stream tabs. Otherwise do nothing: the previously active tab is already
+    // unmuted and other stream tabs stay muted.
+    if (!isTwitchStreamUrl(tab.url)) {
+      const [muteInactive, muteOnNonStream] = await Promise.all([
+        getSetting('muteInactive', false),
+        getSetting('muteOnNonStream', false),
+      ]);
+      if (muteInactive && muteOnNonStream) {
+        const [mutedByUs, doNotMuteTabsNav] = await Promise.all([
+          getSet('mutedByUs'), getSet('doNotMuteTabs'),
+        ]);
+        const windowTabs = await chrome.tabs.query({ windowId: tab.windowId });
+        let changed = false;
+        for (const t of windowTabs) {
+          if (t.id === tabId) continue;
+          if (!isTwitchStreamUrl(t.url)) continue;
+          if (!t.mutedInfo?.muted) { await muteTab(t.id, mutedByUs, doNotMuteTabsNav); changed = true; }
+        }
+        if (changed) await saveSet('mutedByUs', mutedByUs);
+      }
+    }
     return;
   }
   const muteInactive = await getSetting('muteInactive', false);
-  if (!muteInactive || tab.mutedInfo?.muted) return;
+  if (!muteInactive) return;
 
-  const [mutedByUs, doNotMuteTabs] = await Promise.all([getSet('mutedByUs'), getSet('doNotMuteTabs')]);
+  const [mutedByUs, doNotMuteTabs, pendingUnmute] = await Promise.all([
+    getSet('mutedByUs'), getSet('doNotMuteTabs'), getSet('pendingUnmute'),
+  ]);
+
+  if (!isTwitchStreamUrl(tab.url)) {
+    // Navigated away from a stream — release our mute if we applied it
+    if (mutedByUs.has(tabId)) {
+      await unmuteTab(tabId, mutedByUs, pendingUnmute);
+      await Promise.all([saveSet('mutedByUs', mutedByUs), saveSet('pendingUnmute', pendingUnmute)]);
+    }
+    return;
+  }
+
+  if (tab.mutedInfo?.muted) return;
   await muteTab(tabId, mutedByUs, doNotMuteTabs);
   await saveSet('mutedByUs', mutedByUs);
 });
 
+// ── Context menu strings (mirrors translations.js ctx_* keys) ─────────────────
+
+const CTX_STRINGS = {
+  en: { parent: 'Quiet Twitch', setPrimary: 'Set as Primary Tab', dnm: 'Do Not Mute This Tab (Ads are still muted)', hideStreamer: 'Hide Streamer: %s' },
+  es: { parent: 'Quiet Twitch', setPrimary: 'Establecer como pesta\u00f1a principal', dnm: 'No silenciar esta pesta\u00f1a (los anuncios siguen silenciados)', hideStreamer: 'Ocultar streamer: %s' },
+  fr: { parent: 'Quiet Twitch', setPrimary: 'D\u00e9finir comme onglet principal', dnm: 'Ne pas couper cet onglet (les pubs restent en sourdine)', hideStreamer: 'Masquer le streamer\u00a0: %s' },
+  de: { parent: 'Quiet Twitch', setPrimary: 'Als prim\u00e4ren Tab festlegen', dnm: 'Diesen Tab nicht stummschalten (Werbung bleibt stummgeschaltet)', hideStreamer: 'Streamer ausblenden: %s' },
+};
+
 // ── Context menus ─────────────────────────────────────────────────────────────
 
-function registerContextMenus() {
+async function registerContextMenus() {
+  const { language = 'en' } = await chrome.storage.local.get('language');
+  const s = CTX_STRINGS[language] || CTX_STRINGS.en;
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: 'twitchAdMuter',
-      title: 'Twitch Ad Muter',
+      title: s.parent,
       contexts: ['page'],
       documentUrlPatterns: ['*://*.twitch.tv/*'],
     });
     chrome.contextMenus.create({
       id: 'setPrimaryTab',
       parentId: 'twitchAdMuter',
-      title: 'Set as Primary Tab',
+      title: s.setPrimary,
       contexts: ['page'],
       documentUrlPatterns: ['*://*.twitch.tv/*'],
     });
     chrome.contextMenus.create({
       id: 'toggleDoNotMute',
       parentId: 'twitchAdMuter',
-      title: 'Do Not Mute This Tab (Ads are still muted)',
+      title: s.dnm,
       type: 'checkbox',
       checked: false,
       contexts: ['page'],
       documentUrlPatterns: ['*://*.twitch.tv/*'],
     });
+    chrome.contextMenus.create({
+      id: 'hideStreamer',
+      parentId: 'twitchAdMuter',
+      title: s.hideStreamer.replace('%s', ''),
+      visible: false,
+      contexts: ['page'],
+      documentUrlPatterns: ['*://*.twitch.tv/*'],
+    });
   });
+}
+
+async function updateHideStreamerMenuItem(url) {
+  const { language = 'en' } = await chrome.storage.local.get('language');
+  const s = CTX_STRINGS[language] || CTX_STRINGS.en;
+  const streamer = getStreamerFromUrl(url);
+  chrome.contextMenus.update('hideStreamer', {
+    visible: !!streamer,
+    title: streamer ? s.hideStreamer.replace('%s', streamer) : s.hideStreamer.replace('%s', ''),
+  }).catch(() => {});
 }
 
 chrome.runtime.onInstalled.addListener(registerContextMenus);
@@ -419,6 +510,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     await saveSet('doNotMuteTabs', doNotMuteTabs);
+  }
+
+  if (info.menuItemId === 'hideStreamer') {
+    const streamer = getStreamerFromUrl(tab.url);
+    if (!streamer) return;
+    const set = await getSet('hiddenStreamers');
+    set.add(streamer);
+    await saveSet('hiddenStreamers', set);
+    // Broadcast to all Twitch tabs so content scripts apply hiding immediately
+    const twitchTabs = await chrome.tabs.query({ url: '*://*.twitch.tv/*' });
+    for (const t of twitchTabs) {
+      chrome.tabs.sendMessage(t.id, { type: 'HIDDEN_STREAMERS_UPDATED' }).catch(() => {});
+    }
   }
 });
 
