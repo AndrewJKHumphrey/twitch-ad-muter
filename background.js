@@ -69,6 +69,18 @@ function getStreamerFromUrl(url) {
   } catch { return null; }
 }
 
+// Tabs currently showing Twitch's shrunken mini-player. Reported by content.js
+// when the URL navigates off a stream page but the player keeps playing audio.
+// In-memory only — content.js re-emits state if the service worker restarts.
+const miniPlayerTabs = new Set();
+
+// True if the tab is a stream URL OR is currently playing in mini-player mode.
+// Used wherever muting decisions previously checked isTwitchStreamUrl alone.
+function isStreamLike(tab) {
+  if (!tab) return false;
+  return isTwitchStreamUrl(tab.url) || miniPlayerTabs.has(tab.id);
+}
+
 // Mute a tab and record that we did it
 // Skips silently if the tab has "Do not mute" enabled
 async function muteTab(tabId, mutedByUs, doNotMuteTabs) {
@@ -88,10 +100,30 @@ async function unmuteTab(tabId, mutedByUs, pendingUnmute) {
 
 chrome.runtime.onMessage.addListener((message, sender) => {
   const tabId = sender.tab?.id;
-  if (message.type === 'AD_STATE_CHANGED')      handleAdStateChange(tabId, message.isAd);
-  if (message.type === 'STREAM_STATE_CHANGED')  handleStreamStateChange(tabId, message.isOffline);
-  if (message.type === 'STREAM_CRASH_DETECTED') handleStreamCrash(tabId);
+  if (message.type === 'AD_STATE_CHANGED')          handleAdStateChange(tabId, message.isAd);
+  if (message.type === 'STREAM_STATE_CHANGED')      handleStreamStateChange(tabId, message.isOffline);
+  if (message.type === 'STREAM_CRASH_DETECTED')     handleStreamCrash(tabId);
+  if (message.type === 'MINI_PLAYER_STATE_CHANGED') handleMiniPlayerStateChange(tabId, message.active);
 });
+
+async function handleMiniPlayerStateChange(tabId, active) {
+  if (!tabId) return;
+  if (active) miniPlayerTabs.add(tabId);
+  else miniPlayerTabs.delete(tabId);
+
+  // If the tab is currently inactive and muteInactive is on, mute now —
+  // otherwise the mini-player would keep playing until the next tab switch.
+  if (!active) return;
+  const muteInactive = await getSetting('muteInactive', false);
+  if (!muteInactive) return;
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || tab.active || tab.mutedInfo?.muted) return;
+  const [mutedByUs, doNotMuteTabs] = await Promise.all([
+    getSet('mutedByUs'), getSet('doNotMuteTabs'),
+  ]);
+  await muteTab(tabId, mutedByUs, doNotMuteTabs);
+  await saveSet('mutedByUs', mutedByUs);
+}
 
 async function handleAdStateChange(tabId, isAd) {
   if (!tabId) return;
@@ -266,10 +298,10 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
   // previously active stream tab is already unmuted and other stream tabs stay muted.
   if (muteInactive) {
     const allTwitchTabs = await chrome.tabs.query({ windowId });
-    if (isTwitchStreamUrl(activatedTab.url)) {
+    if (isStreamLike(activatedTab)) {
       for (const tab of allTwitchTabs) {
         if (tab.id === tabId) continue;
-        if (!isTwitchStreamUrl(tab.url)) continue;
+        if (!isStreamLike(tab)) continue;
         if (!tab.mutedInfo?.muted) await muteTab(tab.id, mutedByUs, doNotMuteTabs);
       }
     } else {
@@ -277,7 +309,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId, windowId }) => {
       if (muteOnNonStream) {
         for (const tab of allTwitchTabs) {
           if (tab.id === tabId) continue;
-          if (!isTwitchStreamUrl(tab.url)) continue;
+          if (!isStreamLike(tab)) continue;
           if (!tab.mutedInfo?.muted) await muteTab(tab.id, mutedByUs, doNotMuteTabs);
         }
       }
@@ -312,7 +344,7 @@ async function applyMuteInactiveSetting(enabled) {
   if (enabled) {
     // Mute every inactive Twitch stream tab that isn't already muted
     for (const tab of allTabs) {
-      if (!tab.active && !tab.mutedInfo?.muted && isTwitchStreamUrl(tab.url)) {
+      if (!tab.active && !tab.mutedInfo?.muted && isStreamLike(tab)) {
         await muteTab(tab.id, mutedByUs, doNotMuteTabs);
       }
     }
@@ -367,7 +399,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     // Active tab navigated away from a stream — if muteOnNonStream is on, mute all
     // other stream tabs. Otherwise do nothing: the previously active tab is already
     // unmuted and other stream tabs stay muted.
-    if (!isTwitchStreamUrl(tab.url)) {
+    if (!isStreamLike(tab)) {
       const [muteInactive, muteOnNonStream] = await Promise.all([
         getSetting('muteInactive', false),
         getSetting('muteOnNonStream', false),
@@ -380,7 +412,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         let changed = false;
         for (const t of windowTabs) {
           if (t.id === tabId) continue;
-          if (!isTwitchStreamUrl(t.url)) continue;
+          if (!isStreamLike(t)) continue;
           if (!t.mutedInfo?.muted) { await muteTab(t.id, mutedByUs, doNotMuteTabsNav); changed = true; }
         }
         if (changed) await saveSet('mutedByUs', mutedByUs);
@@ -395,8 +427,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     getSet('mutedByUs'), getSet('doNotMuteTabs'), getSet('pendingUnmute'),
   ]);
 
-  if (!isTwitchStreamUrl(tab.url)) {
-    // Navigated away from a stream — release our mute if we applied it
+  if (!isStreamLike(tab)) {
+    // Navigated away from a stream — release our mute if we applied it.
+    // miniPlayerTabs check: if Twitch is keeping the player alive in mini-mode
+    // we want to stay muted. content.js may take a beat to report the mini-player
+    // after navigation; handleMiniPlayerStateChange re-mutes once that signal arrives.
     if (mutedByUs.has(tabId)) {
       await unmuteTab(tabId, mutedByUs, pendingUnmute);
       await Promise.all([saveSet('mutedByUs', mutedByUs), saveSet('pendingUnmute', pendingUnmute)]);
@@ -544,6 +579,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     clearTimeout(reloadAttempts.get(tabId).resetTimer);
     reloadAttempts.delete(tabId);
   }
+  miniPlayerTabs.delete(tabId);
   for (const key of ['adTabs', 'mutedByUs', 'pendingUnmute', 'doNotMuteTabs']) {
     const set = await getSet(key);
     if (set.has(tabId)) { set.delete(tabId); await saveSet(key, set); }

@@ -225,6 +225,34 @@ window.addEventListener('message', (e) => {
   handleAdState(e.data.isAd, 'network');
 });
 
+// ── Mini-player detection ─────────────────────────────────────────────────────
+//
+// Clicking a Category link (or similar) from a channel page navigates to a
+// non-stream URL while Twitch keeps the stream playing in a shrunken player.
+// background.js's muteInactive logic keys off isTwitchStreamUrl, so without a
+// signal it would never mute this tab on switch. Report the mini-player state
+// so the tab is treated as stream-like for muting decisions.
+//
+// Detection: Twitch adds the `--persisting-player` modifier to the root
+// scrollable container exactly when the player is persisting across navigation
+// (i.e. mini-player mode). On a normal channel page this modifier is absent.
+//
+// Initial value is null (not false) so the first check always emits — a tab
+// reloaded back to a stream page must clear any stale entry that the previous
+// session left in background's miniPlayerTabs set.
+let miniPlayerActive = null;
+
+function hasMiniPlayer() {
+  return !!document.querySelector('.root-scrollable--persisting-player');
+}
+
+function checkMiniPlayer() {
+  const active = hasMiniPlayer();
+  if (active === miniPlayerActive) return;
+  miniPlayerActive = active;
+  chrome.runtime.sendMessage({ type: 'MINI_PLAYER_STATE_CHANGED', active });
+}
+
 // ── Tab title management ──────────────────────────────────────────────────────
 //
 // Both Primary and DNM replace '- Twitch' to prevent Twitch from recognising
@@ -441,6 +469,10 @@ function checkDOM() {
 
   // Feature: hide blocked streamers across all Twitch pages
   applyHiding();
+
+  // Report mini-player presence so muteInactive can still mute this tab
+  // after the URL navigates away from /streamer.
+  checkMiniPlayer();
 
 }
 
